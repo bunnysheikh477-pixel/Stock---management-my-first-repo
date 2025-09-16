@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='Stock.css') }}">
+  <title>Stock Management</title>
+  
+</head>
+<body>
+  <div class="app" id="app">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12h18" stroke="white" stroke-opacity="0.9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6h12v12H6z" stroke="white" stroke-opacity="0.6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h1>StockWave</h1>
+          <p class="lead">Add, sell, display & manage your inventory — beautiful and fast.</p>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="importBtn">Import</button>
+        <button class="btn" id="exportBtn">Export</button>
+        <button class="btn" id="exitBtn">Exit</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="card">
+        <h3 style="margin-top:0">Add / Update Item</h3>
+        <form id="itemForm">
+          <div class="row"><div style="flex:1"><label class="small">Name</label><input id="name" type="text" required></div></div>
+          <div class="row"><div style="flex:1"><label class="small">SKU (unique name)</label><input id="sku" type="text" required></div></div>
+          <div class="row"><div style="flex:1"><label class="small">Quantity</label><input id="qty" type="number" min="0" value="1" required></div><div style="width:120px"><label class="small">Price</label><input id="price" type="number" min="0" step="0.01" value="0.0" required></div></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" type="submit">Add / Update</button><button class="btn" type="button" id="clearBtn">Clear</button></div>
+        </form>
+
+        <div class="stats">
+          <div class="stat"><div class="small">Items</div><h3 id="totalItems">0</h3></div>
+          <div class="stat"><div class="small">Total Stock</div><h3 id="totalQty">0</h3></div>
+          <div class="stat"><div class="small">Value</div><h3 id="totalValue">PKR 0.0</h3></div>
+        </div>
+
+        <div style="margin-top:12px" class="small">Tip: SKU is used to identify items. Use the same SKU to update an existing item.</div>
+      </aside>
+
+      <main>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h3 style="margin:0">Inventory</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="search" type="text" placeholder="Search name or SKU" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit">
+              <select id="sort" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit">
+                <option value="new">Newest</option>
+                <option value="name">Name A→Z</option>
+                <option value="qty">Lowest Qty</option>
+                <option value="value">Highest Value</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="list" class="grid-list"></div>
+          <div id="empty" class="empty" style="display:none">No items yet — add your first product on the left.</div>
+        </div>
+
+        <footer>Built with care • You can hook the actions to a backend API (see instructions)</footer>
+      </main>
+    </div>
+
+  </div>
+
+  
+  <div id="modal" class="modal" style="display:none">
+    <div class="modal-back"></div>
+    <div class="modal-card">
+      <h3 id="modalTitle">Sell Item</h3>
+      <div style="margin-top:8px"><div class="small">Available: <strong id="modalAvailable">0</strong></div></div>
+      <div style="margin-top:10px"><label class="small">Quantity to sell</label><input id="sellQty" type="number" min="1" value="1"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button class="btn" id="cancelSell">Cancel</button><button class="btn primary" id="confirmSell">Confirm Sell</button></div>
+    </div>
+  </div>
+
+  <script>
+    // Simple client-side stock manager with localStorage and optional hooks for backend.
+    const STORAGE_KEY = 'stockItems_v1';
+    let items = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+
+    // Elements
+    const form = document.getElementById('itemForm');
+    const nameEl = document.getElementById('name');
+    const skuEl = document.getElementById('sku');
+    const qtyEl = document.getElementById('qty');
+    const priceEl = document.getElementById('price');
+    const listEl = document.getElementById('list');
+    const emptyEl = document.getElementById('empty');
+    const totalItemsEl = document.getElementById('totalItems');
+    const totalQtyEl = document.getElementById('totalQty');
+    const totalValueEl = document.getElementById('totalValue');
+    const searchEl = document.getElementById('search');
+    const sortEl = document.getElementById('sort');
+    const clearBtn = document.getElementById('clearBtn');
+    const exitBtn = document.getElementById('exitBtn');
+    const importBtn = document.getElementById('importBtn');
+    const exportBtn = document.getElementById('exportBtn');
+
+    // Modal
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalAvailable = document.getElementById('modalAvailable');
+    const sellQty = document.getElementById('sellQty');
+    const cancelSell = document.getElementById('cancelSell');
+    const confirmSell = document.getElementById('confirmSell');
+    let sellingSKU = null;
+
+    function save(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      // OPTIONAL: integrate with backend here using fetch to POST the items or single item.
+      // e.g. fetch('/api/save', {method:'POST', body: JSON.stringify(items)})
+    }
+
+    function render(){
+      // apply search + sort
+      const q = (searchEl.value || '').toLowerCase().trim();
+      let out = items.filter(it => it.name.toLowerCase().includes(q) || it.sku.toLowerCase().includes(q));
+      const sort = sortEl.value;
+      if(sort==='name') out.sort((a,b)=>a.name.localeCompare(b.name));
+      if(sort==='qty') out.sort((a,b)=>a.qty - b.qty);
+      if(sort==='value') out.sort((a,b)=>(b.qty*b.price) - (a.qty*a.price));
+      if(sort==='new') out = out.slice().reverse();
+
+      listEl.innerHTML='';
+      if(out.length===0){ emptyEl.style.display='block'; } else { emptyEl.style.display='none'; }
+
+      out.forEach(it => {
+        const el = document.createElement('div'); el.className='item';
+        el.innerHTML = `
+          <div style="width:56px;height:56px;border-radius:8px;background:linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));display:flex;align-items:center;justify-content:center;font-weight:800">${it.name.charAt(0).toUpperCase()}</div>
+          <div class="meta">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700">${escapeHtml(it.name)}</div><div class="badge">SKU ${escapeHtml(it.sku)}</div></div>
+            <div class="small">Qty: <strong>${it.qty}</strong> • Price: <strong>$${Number(it.price).toFixed(2)}</strong> • Value: <strong>$${(it.qty*it.price).toFixed(2)}</strong></div>
+          </div>
+          <div class="actions">
+            <button class="ghost" data-action="sell" data-sku="${escapeHtml(it.sku)}">Sell</button>
+            <button class="ghost" data-action="edit" data-sku="${escapeHtml(it.sku)}">Edit</button>
+            <button class="ghost danger" data-action="delete" data-sku="${escapeHtml(it.sku)}">Delete</button>
+          </div>
+        `;
+        listEl.appendChild(el);
+      });
+
+      // stats
+      const totalItems = items.length;
+      const totalQty = items.reduce((s,i)=>s+i.qty,0);
+      const totalValue = items.reduce((s,i)=>s+i.qty*i.price,0);
+      totalItemsEl.textContent = totalItems;
+      totalQtyEl.textContent = totalQty;
+      totalValueEl.textContent = '$' + totalValue.toFixed(2);
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const name = nameEl.value.trim();
+      const sku = skuEl.value.trim();
+      const qty = Number(qtyEl.value) || 0;
+      const price = Number(priceEl.value) || 0;
+      if(!name || !sku) return alert('Provide name and SKU');
+
+      const existing = items.find(it=>it.sku===sku);
+      if(existing){
+        // update
+        existing.name = name; existing.qty = qty; existing.price = price;
+        // OPTIONAL: call backend update endpoint
+        // fetch(`/api/items/${encodeURIComponent(sku)}`, {method:'PUT', body: JSON.stringify(existing)})
+      } else {
+        items.push({name, sku, qty, price, created:Date.now()});
+        // OPTIONAL: call backend add endpoint
+        // fetch('/api/items', {method:'POST', body: JSON.stringify({name,sku,qty,price})})
+      }
+      save(); render(); form.reset(); qtyEl.value=1; priceEl.value='0.0';
+    });
+
+    clearBtn.addEventListener('click', ()=>{form.reset(); qtyEl.value=1; priceEl.value='0.0'});
+
+    listEl.addEventListener('click', e=>{
+      const btn = e.target.closest('button'); if(!btn) return;
+      const action = btn.dataset.action; const sku = btn.dataset.sku;
+      if(action==='delete'){
+        if(!confirm('Delete this item?')) return;
+        items = items.filter(it=>it.sku !== sku);
+        // OPTIONAL: call backend delete
+        // fetch(`/api/items/${encodeURIComponent(sku)}`, {method:'DELETE'})
+        save(); render();
+      }
+      if(action==='edit'){
+        const it = items.find(i=>i.sku===sku); if(!it) return;
+        nameEl.value = it.name; skuEl.value = it.sku; qtyEl.value = it.qty; priceEl.value = it.price; window.scrollTo({top:0,behavior:'smooth'});
+      }
+      if(action==='sell'){
+        const it = items.find(i=>i.sku===sku); if(!it) return;
+        sellingSKU = sku; modalAvailable.textContent = it.qty; sellQty.value = 1; modalTitle.textContent = `Sell — ${it.name}`; modal.style.display='flex';
+      }
+    });
+
+    cancelSell.addEventListener('click', ()=>{modal.style.display='none'; sellingSKU=null});
+    confirmSell.addEventListener('click', ()=>{
+      const q = Number(sellQty.value)||0; if(q<=0){alert('Enter a quantity');return}
+      const it = items.find(i=>i.sku===sellingSKU); if(!it){alert('Item not found');modal.style.display='none';return}
+      if(q>it.qty){if(!confirm(`Selling ${q} exceeds available (${it.qty}). Proceed and set negative?`)) return}
+      it.qty = it.qty - q;
+      // record sale -> you can store sales history or send to backend
+      // fetch('/api/sell', {method:'POST', body: JSON.stringify({sku:sellingSKU, qty:q})})
+      save(); render(); modal.style.display='none'; sellingSKU=null;
+    });
+
+    // search + sort
+    searchEl.addEventListener('input', render); sortEl.addEventListener('change', render);
+
+    // export / import
+    exportBtn.addEventListener('click', ()=>{
+      const data = JSON.stringify(items, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'stock-export.json'; a.click(); URL.revokeObjectURL(url);
+    });
+    importBtn.addEventListener('click', ()=>{
+      const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange = e=>{
+        const f = e.target.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ev=>{
+          try{ const parsed = JSON.parse(ev.target.result); if(!Array.isArray(parsed)) throw new Error('Invalid file'); items = parsed; save(); render(); alert('Imported successfully'); } catch(err){alert('Invalid JSON file')}
+        }; reader.readAsText(f);
+      }; inp.click();
+    });
+
+    // exit behavior: call backend exit or simply close window if allowed
+    exitBtn.addEventListener('click', ()=>{
+      // If you have a backend you may want to notify it about shutdown.
+      // Example (uncomment and set URL):
+      // fetch('/api/exit', {method:'POST'}).finally(()=> window.close());
+      if(confirm('Exit the app? This will attempt to close the tab.')){
+        try{ window.open('','_self'); window.close(); } catch(e){ alert('Unable to close window automatically. Please close the tab.'); }
+      }
+    });
+
+    // small helpers
+    function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+    // init
+    render();
+  </script> 
+</body>
+</html>
