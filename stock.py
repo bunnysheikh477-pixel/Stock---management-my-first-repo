@@ -9,84 +9,109 @@ A simple stock management system for learning Git and GitHub . A stock managemen
 
 
 
-import json, os
-stock = []
+import json,os
+stock_list=[]
 
-## Loading file function
-def load_S(path="Stock.json"):
+from flask import Flask,render_template,request,redirect,url_for
+
+
+# Data load and save functions
+
+
+def load_S(path="Stock_list.json"):
     if not os.path.exists(path):
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        return json.loads(f.read() or "[]")
+    with open(path,"r",encoding="utf-8") as f:
+        return json.loads(f.read()or"[]")
+    
 
-## Saving file function
-def save_S(path="Stock.json"):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(stock, f, indent=2)
+def save_S(path="Stock_list.json"):
+    with open(path,"w",encoding="utf-8") as f:
+        json.dump(stock_list,f,indent=2)
 
-## Menu function
-def menu():
-    print("\n1. Adding product")
-    print("2. Display product list")
-    print("3. Delete a product")
-    print("4. Exit")
-    choice = int(input("Enter your choice: "))
-    return choice
 
-## Adding function
-def add_p(pro_N, pro_Q):
-    new_P = {"pro_N": pro_N, "pro_Q": pro_Q, "done": False}
-    stock.append(new_P)
+
+
+
+
+app=Flask(__name__)
+@app.route("/")
+def index():
+  return render_template("Stock.html")
+
+
+
+@app.route("/add",methods=["POST"])
+def add_p():
+    pro_N=request.form.get("Name").upper().strip()
+    pro_Q=int(request.form.get("Quantity"))
+    E_Price=float(request.form.get("Price"))
+    
+    new_P={
+        'pro_N':pro_N,
+        'pro_Q':pro_Q,
+        'E_Price':E_Price,
+        'done':False
+        } 
+    
+    stock_list.append(new_P)
     save_S()
-    print("Product added successfully!")
+    # return redirect(url_for(""))
+    return render_template("Stock.html")
+    
 
-## Displaying product list function
-def display():
-    if not stock:
-        print(" No products available.")
-        return
 
-    print("\nCurrent Products:")
-    print("-" * 40)
-    print(f"{'No.':<5}{'Name':<20}{'Quantity':<10}")
-    print("-" * 40)
-    for i, p in enumerate(stock, 1):
-        print(f"{i:<5}{p['pro_N']:<20}{p['pro_Q']:<10}")
-    print("-" * 40)
-
-## Removing product from list
+            
+            
+@app.route("/delete/<int:pro_N>")            
 def delete(pro_N):
-    for i, p in enumerate(stock):
-        if p['pro_N'].lower() == pro_N.lower():
-            del stock[i]
+    global stock_list
+    for i,p in enumerate(stock_list):
+        if p["pro_N"]==pro_N:
+            del stock_list[i]
             save_S()
-            print(f" The item : {pro_N} was deleted successfully.")
-            return
-    print(f" Product : {pro_N}  not found!")
-
-## Main function
-def main():
-    global stock
-    stock = load_S()
-    while True:
-        choice = menu()
-        if choice == 1:
-            pro_N = input("Enter product name: ").strip()
-            pro_Q = int(input("Enter product quantity: "))
-            add_p(pro_N, pro_Q)
-        elif choice == 2:
-            display()
-        elif choice == 3:
-            pro_N = input("Enter product name to delete: ").strip()
-            delete(pro_N)
-        elif choice == 4:
-            print("Exiting...")
             break
-        else:
-            print(" Invalid choice!")
+ 
+    return render_template("Stock.html")
 
-if __name__ == "__main__":
-    main()
+            
+@app.route("/sell",methods=["POST"]) 
+def sell(stock_list,pro_N,pro_Q):
+  product_to_sell=None
+  for product in stock_list:
+      if product['pro_N']==pro_N:
+          product_to_sell=product
+          break
+  if product_to_sell is None:
+     print(f"\n'{pro_N} is not found in the stock list:")
+     return 
+  if product_to_sell['pro_Q']<pro_Q:
+      print(f"Not enough {pro_N} in stock. Available: {product_to_sell['pro_Q']}")
+      return 
+  product_to_sell['pro_Q']-=pro_Q
+  save_S()
+  total_p=product_to_sell["E_Price"]*pro_Q
+  print(f"\n  ITEM SOLD . \nItem quantity = {pro_Q}.\nItem name = {pro_N}.\nTotal price = Rs.{total_p}.\nRemaining stock: {product_to_sell['pro_Q']}")  
+  return render_template("Stock.html")
+        
+   
+   
+   
+   
+   
+if __name__=="__main__":
+    load_S()
+    app.run(debug=True)             
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
